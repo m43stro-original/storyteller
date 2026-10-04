@@ -86,3 +86,77 @@ async def test_continuity_engine_with_poll_and_suggestions():
     # Verify that viewer suggestion is included
     assert "забытый советский термос" in user_prompt
     assert "@kudrovo_watcher" in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_continuity_engine_season_chronicle_and_1987_invariants():
+    # Insert multiple episodes
+    await Repository.add_episode(
+        season=1,
+        episode_number=1,
+        title="Пилот",
+        content="Начало истории в Кудрово...",
+        cliffhanger="Провалились в котлован."
+    )
+    await Repository.add_episode(
+        season=1,
+        episode_number=2,
+        title="Тени 1987-го",
+        content="Герои вылезают в 1987 году...",
+        cliffhanger="Встретили пионера Мишу."
+    )
+
+    engine = ContinuityEngine()
+    sys_prompt, user_prompt = await engine.build_narrator_prompts()
+
+    # 1. Verify 1987 USSR invariants
+    assert "1987 ГОД" in user_prompt or "1987" in user_prompt
+    assert "СССР" in user_prompt
+    assert "АНАХРОНИЗМ" in user_prompt
+
+    # 2. Verify compact season chronicle is present
+    assert "КРАТКАЯ ХРОНИКА ВСЕХ СЕРИЙ" in user_prompt
+    assert "Серия 1: «Пилот»" in user_prompt
+    assert "Серия 2: «Тени 1987-го»" in user_prompt
+
+    # 3. Verify full previous episode text is included
+    assert "Герои вылезают в 1987 году..." in user_prompt
+
+
+@pytest.mark.asyncio
+async def test_continuity_engine_episode_14_finale():
+    # Set current episode to 13, so next is 14 (Finale)
+    await Repository.update_story_state(
+        season=1,
+        current_episode=13,
+        rolling_synopsis="Могний вылит на осколок звезды.",
+        active_mysteries=["Схлопнется ли звезда?"],
+        character_statuses={"Дима": "У котлована"}
+    )
+    await Repository.add_episode(
+        season=1,
+        episode_number=13,
+        title="Рассвет Могния",
+        content="Осколок залит могнием...",
+        cliffhanger="Участковый требует поднять руки."
+    )
+
+    engine = ContinuityEngine()
+    sys_prompt, user_prompt = await engine.build_narrator_prompts(
+        last_poll_result={"question": "Как поступить?", "winner_option": "Отвлечь милицию", "total_voters": 42}
+    )
+
+    # Verify system prompt mentions Season 1 Finale and no poll
+    assert "ФИНАЛ" in sys_prompt
+    assert "is_finale" in sys_prompt
+
+    # Verify user prompt injects Episode 14 Finale instructions
+    assert "СЕРИЯ 14 — ГРАНДИОЗНЫЙ И ЭПИЧНЫЙ ФИНАЛ 1-ГО СЕЗОНА" in user_prompt
+    assert "СХЛОПЫВАНИЕ ЗВЕЗДЫ" in user_prompt
+    assert "ПРОЩАНИЕ С 1987 ГОДОМ" in user_prompt
+    assert "КАТЕГОРИЧЕСКИ БЕЗ ОПРОСА" in user_prompt
+    assert "is_finale" in user_prompt
+    assert "poll_question': null" in user_prompt
+    assert "poll_options': []" in user_prompt
+
+

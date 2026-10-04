@@ -140,6 +140,58 @@ async def test_run_episode_cycle_end_to_end():
         assert active_poll["question"] == "Открыть дверь?"
 
 
+@pytest.mark.asyncio
+async def test_run_episode_cycle_finale_no_poll():
+    bot = AsyncMock()
+
+    # Mock send_message
+    msg_mock = MagicMock()
+    msg_mock.message_id = 2001
+    bot.send_message.return_value = msg_mock
+
+    finale_episode_json = {
+        "title": "Возвращение в Рассвет",
+        "screenplay": "Звезда вспыхивает белым пламенем и схлопывается. Дима сжимает руку Даши...",
+        "cliffhanger": "Финал 1 сезона: герои дома, разлом закрыт.",
+        "is_finale": True,
+        "poll_question": None,
+        "poll_options": [],
+        "updated_synopsis": "Звезда уничтожена, герои вернулись в 2026 год.",
+        "new_mysteries": [],
+        "updated_characters": {"Дима": "В 2026 году рядом с Дашей", "Даша": "Счастлива, дома"}
+    }
+
+    mock_llm_response = MagicMock()
+    mock_choice = MagicMock()
+    mock_choice.message.content = f"```json\n{import_json_dumps(finale_episode_json)}\n```"
+    mock_llm_response.choices = [mock_choice]
+
+    with patch("services.narrator.AsyncOpenAI") as mock_openai_cls:
+        mock_instance = MagicMock()
+        mock_instance.chat.completions.create = AsyncMock(return_value=mock_llm_response)
+        mock_openai_cls.return_value = mock_instance
+
+        ep_id = await run_episode_cycle(bot)
+        assert ep_id is not None
+
+        # Verify episode in DB
+        ep = await Repository.get_latest_episode(season=1)
+        assert ep["title"] == "Возвращение в Рассвет"
+
+        # Verify bot.send_poll was NEVER called
+        bot.send_poll.assert_not_called()
+
+        # Verify sent post text contains the Finale banner and season finale title
+        sent_text = bot.send_message.call_args_list[0].kwargs.get("text", "")
+        assert "ФИНАЛ СЕЗОНА" in sent_text
+        assert "🏁 ФИНАЛ 1-ГО СЕЗОНА!" in sent_text
+        assert "Голосуйте в опросе ниже" not in sent_text
+
+        # Verify NO poll in DB
+        active_poll = await Repository.get_active_poll()
+        assert active_poll is None
+
+
 def import_json_dumps(obj):
     import json
     return json.dumps(obj, ensure_ascii=False)

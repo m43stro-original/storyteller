@@ -59,6 +59,7 @@ async def cmd_status(message: types.Message):
         active_poll = await Repository.get_active_poll()
         pending_ideas = await Repository.get_pending_suggestions(limit=10)
         latest_ep = await Repository.get_latest_episode(season=1)
+        season_episodes = await Repository.get_season_episodes(season=state.get("season", 1))
 
         poll_info = "Нет активного опроса"
         if active_poll:
@@ -67,14 +68,27 @@ async def cmd_status(message: types.Message):
 
         last_ep_title = f"Серия {latest_ep['episode_number']}: «{latest_ep['title']}»" if latest_ep else "Еще не выпущено"
 
+        chronology_lines = []
+        if season_episodes:
+            for ep in season_episodes:
+                num = ep.get("episode_number")
+                title = html.escape(ep.get("title", ""))
+                cliff = ep.get("cliffhanger", "").strip()
+                cliff_snip = f" — <i>{html.escape(cliff[:85])}...</i>" if cliff else ""
+                chronology_lines.append(f"• <b>Серия {num}:</b> «{title}»{cliff_snip}")
+            chronology_block = "\n".join(chronology_lines)
+        else:
+            chronology_block = "<i>Серий пока нет</i>"
+
         text = (
-            f"📊 <b>СТАТУС СЕРИАЛА</b>\n\n"
-            f"• Сезон: {state.get('season', 1)}\n"
+            f"📊 <b>СТАТУС СЕРИАЛА (СЕЗОН {state.get('season', 1)})</b>\n\n"
+            f"• Эпоха: <b>СССР, 1987 год</b>\n"
             f"• Текущая серия: {state.get('current_episode', 0)}\n"
             f"• Последний релиз: {html.escape(last_ep_title)}\n"
             f"• Активный опрос: {html.escape(poll_info)}\n"
             f"• Идей в очереди: {len(pending_ideas)}\n\n"
-            f"📖 <b>Синопсис:</b>\n<i>{html.escape(state.get('rolling_synopsis', '')[:400])}...</i>\n\n"
+            f"📜 <b>Хронология сезона:</b>\n{chronology_block}\n\n"
+            f"📖 <b>Актуальный синопсис:</b>\n<i>{html.escape(state.get('rolling_synopsis', '')[:400])}...</i>\n\n"
             f"⚙️ <b>Конфигурация:</b>\n"
             f"• Narrator API: <code>{settings.CODECRAFT_BASE_URL}</code> ({settings.CODECRAFT_MODEL})\n"
             f"• Comments API: <code>{settings.GROQ_BASE_URL}</code> ({settings.GROQ_MODEL})\n"

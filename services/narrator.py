@@ -79,14 +79,24 @@ class NarratorService:
         title = parsed.get("title", "Новая глава")
         screenplay = parsed.get("screenplay", "")
         cliffhanger = parsed.get("cliffhanger", "")
-        poll_question = parsed.get("poll_question", "Что делать дальше?")
-        poll_options = parsed.get("poll_options", ["Продолжить расследование", "Отступить"])
 
-        # Normalize poll options (Telegram max 10 options, each <= 100 chars, minimum 2 options)
-        clean_options = [str(opt)[:100] for opt in poll_options if str(opt).strip()]
-        if len(clean_options) < 2:
-            clean_options = ["Исследовать дальше", "Вернуться в штаб"]
-        clean_options = clean_options[:5]
+        is_finale = bool(
+            parsed.get("is_finale")
+            or parsed.get("poll_question") is None
+            or (parsed.get("poll_options") is not None and len(parsed.get("poll_options", [])) == 0)
+        )
+
+        if is_finale:
+            poll_question = None
+            clean_options = []
+        else:
+            poll_question = parsed.get("poll_question", "Что делать дальше?")
+            poll_options = parsed.get("poll_options", ["Продолжить расследование", "Отступить"])
+            # Normalize poll options (Telegram max 10 options, each <= 100 chars, minimum 2 options)
+            clean_options = [str(opt)[:100] for opt in poll_options if str(opt).strip()]
+            if len(clean_options) < 2:
+                clean_options = ["Исследовать дальше", "Вернуться в штаб"]
+            clean_options = clean_options[:5]
 
         # Update story state in database
         state = await Repository.get_story_state(season=1)
@@ -153,6 +163,7 @@ class NarratorService:
             "title": title,
             "screenplay": screenplay,
             "cliffhanger": cliffhanger,
+            "is_finale": is_finale,
             "poll_question": poll_question,
             "poll_options": clean_options
         }

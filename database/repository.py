@@ -58,6 +58,28 @@ class Repository:
             rows = await cursor.fetchall()
             return [dict(row) for row in reversed(rows)]
 
+    @staticmethod
+    async def get_season_episodes(season: int = 1) -> List[Dict[str, Any]]:
+        async with get_db_connection() as conn:
+            cursor = await conn.execute("""
+                SELECT id, episode_number, title, cliffhanger, published_at FROM episodes
+                WHERE season = ?
+                ORDER BY episode_number ASC;
+            """, (season,))
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    @staticmethod
+    async def update_episode_content(episode_id: int, content: str, cliffhanger: Optional[str] = None) -> None:
+        async with get_db_connection() as conn:
+            await conn.execute("""
+                UPDATE episodes
+                SET content = ?,
+                    cliffhanger = COALESCE(?, cliffhanger)
+                WHERE id = ?;
+            """, (content, cliffhanger, episode_id))
+            await conn.commit()
+
     # ----------------- POLLS -----------------
     @staticmethod
     async def add_poll(

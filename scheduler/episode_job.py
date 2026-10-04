@@ -95,15 +95,27 @@ async def run_episode_cycle(bot: Bot, dry_run_chat_id: Optional[int | str] = Non
     title = episode_data["title"]
     screenplay = episode_data["screenplay"]
     cliffhanger = episode_data.get("cliffhanger", "")
-    poll_q = episode_data.get("poll_question", "Что делать дальше?")
-    poll_opts = episode_data.get("poll_options", ["Продолжить", "Отступить"])
+    is_finale = bool(
+        episode_data.get("is_finale")
+        or not episode_data.get("poll_options")
+        or not episode_data.get("poll_question")
+    )
+    poll_q = episode_data.get("poll_question")
+    poll_opts = episode_data.get("poll_options", [])
 
-    # Format the Telegram post (pure cinematic story text, without artificial cliffhanger blocks)
-    post_parts = [
-        f"🎬 СЕЗОН {season}, СЕРИЯ {ep_num}: «{title}»\n",
-        screenplay.strip(),
-        "\n👇 Голосуйте в опросе ниже — ваш выбор определит сюжет следующей серии!"
-    ]
+    # Format the Telegram post
+    if is_finale:
+        post_parts = [
+            f"🎬 СЕЗОН {season}, СЕРИЯ {ep_num}: «{title}» (ФИНАЛ СЕЗОНА)\n",
+            screenplay.strip(),
+            "\n🏁 ФИНАЛ 1-ГО СЕЗОНА! Спасибо всем зрителям, кто голосовал в опросах, предлагал идеи в комментариях и создавал эту историю вместе с нами!"
+        ]
+    else:
+        post_parts = [
+            f"🎬 СЕЗОН {season}, СЕРИЯ {ep_num}: «{title}»\n",
+            screenplay.strip(),
+            "\n👇 Голосуйте в опросе ниже — ваш выбор определит сюжет следующей серии!"
+        ]
 
     full_post_text = "\n".join(post_parts)
 
@@ -116,30 +128,39 @@ async def run_episode_cycle(bot: Bot, dry_run_chat_id: Optional[int | str] = Non
         logger.error(f"Failed to send episode message to {target_chat}: {e}", exc_info=True)
         return None
 
-    # Step 5: Publish poll
-    try:
-        poll_res = await PollService.create_and_send_poll(
-            bot=bot,
-            channel_id=target_chat,
-            episode_id=ep_id,
-            question=poll_q,
-            options=poll_opts
-        )
-        if poll_res:
-            logger.info(f"Poll for episode {ep_num} sent successfully.")
-    except Exception as e:
-        logger.error(f"Failed to send poll for episode {ep_num}: {e}", exc_info=True)
+    # Step 5: Publish poll (skipped for finale or episodes without poll)
+    if not is_finale and poll_q and len(poll_opts) >= 2:
+        try:
+            poll_res = await PollService.create_and_send_poll(
+                bot=bot,
+                channel_id=target_chat,
+                episode_id=ep_id,
+                question=poll_q,
+                options=poll_opts
+            )
+            if poll_res:
+                logger.info(f"Poll for episode {ep_num} sent successfully.")
+        except Exception as e:
+            logger.error(f"Failed to send poll for episode {ep_num}: {e}", exc_info=True)
+    else:
+        logger.info(f"Skipping poll publication for episode {ep_num} (Finale episode, no poll).")
 
     # Step 6: Notify admins if live release
     if not dry_run_chat_id:
         for admin_id in settings.ADMIN_IDS:
             try:
-                await bot.send_message(
-                    admin_id,
-                    f"✅ Серия {ep_num} «{title}» успешно опубликована в канале!\n"
-                    f"Опрос: «{poll_q}»\n"
-                    f"Варианты: {', '.join(poll_opts)}"
-                )
+                if is_finale:
+                    admin_msg = (
+                        f"🏁 Финальная серия {ep_num} «{title}» успешно опубликована в канале!\n"
+                        f"Опрос не создавался (финал 1-го сезона)."
+                    )
+                else:
+                    admin_msg = (
+                        f"✅ Серия {ep_num} «{title}» успешно опубликована в канале!\n"
+                        f"Опрос: «{poll_q}»\n"
+                        f"Варианты: {', '.join(poll_opts)}"
+                    )
+                await bot.send_message(admin_id, admin_msg)
             except Exception:
                 pass
 
